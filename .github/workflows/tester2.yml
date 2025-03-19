@@ -1,0 +1,27 @@
+name: System Status Check
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # Runs every 30 minutes
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  check-system-status:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@v4
+
+      - name: Check System Status (Login Test)
+        run: |
+          RESPONSE=$(curl -X POST "https://github.com/stephen-hines/a
+                      -H "Content-Type: application/json" \
+                        -s -o /dev/null -w "%{http_code}")
+
+          if [ "$RESPONSE" -ne 200 ]; then
+            echo "Login failed! System might be down."
+            exit 1
+          else
+            echo "Login successful. System is operational."
+          fi
