@@ -2,7 +2,7 @@ name: System Status Check
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # Runs every 30 minutes
+    - cron: '*/45 * * * *'  # Runs every 45 minutes
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
@@ -15,13 +15,52 @@ jobs:
 
       - name: Check System Status (Login Test)
         run: |
-          RESPONSE=$(curl -X POST "https://github.com/stephen-hines/a
-                      -H "Content-Type: application/json" \
-                        -s -o /dev/null -w "%{http_code}")
+          MAX_RETRIES=3
+          RETRY_DELAY=60  # Wait time (in seconds) between retries
+          
+          for (( i=1; i<=MAX_RETRIES; i++ )); do
+            RESPONSE=$(curl -X POST "https://github.com/stephen-hines" \
+              -H "Content-Type: application/json" \
+              -s -o /dev/null -w "%{http_code}")
 
-          if [ "$RESPONSE" -ne 200 ]; then
-            echo "Login failed! System might be down."
-            exit 1
-          else
-            echo "Login successful. System is operational."
-          fi
+            if [ "$RESPONSE" -eq 200 ]; then
+              echo "Login successful. System is operational."
+              exit 0
+            else
+              echo "Attempt $i: Login failed (HTTP $RESPONSE). Retrying in $RETRY_DELAY seconds..."
+              sleep $RETRY_DELAY
+            fi
+          done
+
+          echo "All retries failed. System might be down."
+          exit 1
+
+  create-issue-on-failure:
+    needs: check-system-status
+    if: failure()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Create a New Branch
+        run: |
+          BRANCH_NAME="system-issue-$(date +%Y%m%d%H%M%S)"
+          git checkout -b $BRANCH_NAME
+
+      - name: Create an Issue File
+        run: |
+          echo "### System Status Check Failed" > SYSTEM_DOWN.md
+          echo "- Date: $(date)" >> SYSTEM_DOWN.md
+          echo "- Automated check failed multiple times." >> SYSTEM_DOWN.md
+          echo "- Immediate investigation required." >> SYSTEM_DOWN.md
+          git add SYSTEM_DOWN.md
+          git commit -m "System status check failed. Creating issue documentation."
+
+      - name: Push Changes & Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git push origin $BRANCH_NAME
+          gh pr create --title "🚨 System Issue Detected" --body "Automated system status check failed. See SYSTEM_DOWN.md for details." --base main
